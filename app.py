@@ -34,61 +34,9 @@ def init_db():
 
 conn = init_db()
 
-# 2. LÓGICA DE PERSISTENCIA (GUARDAR PDFS)
-CARPETA_PDFS = "pdfs_temporales"
-if not os.path.exists(CARPETA_PDFS):
-    os.makedirs(CARPETA_PDFS)
-
-def procesar_pdfs_en_disco():
-    texto_completo = ""
-    archivos = [f for f in os.listdir(CARPETA_PDFS) if f.endswith('.pdf')]
-    if not archivos:
-        return pd.DataFrame()
-        
-    for archivo_nombre in archivos:
-        ruta = os.path.join(CARPETA_PDFS, archivo_nombre)
-        with pdfplumber.open(ruta) as pdf:
-            for pagina in pdf.pages:
-                texto_completo += pagina.extract_text() + "\n"
-    
-    lineas = texto_completo.split('\n')
-    caballos_detectados = []
-    carrera_actual = "1"
-    
-    for i, linea in enumerate(lineas):
-        match_race = re.search(r'Race\s*(\d+)', linea, re.IGNORECASE)
-        if match_race:
-            carrera_actual = match_race.group(1)
-        
-        match_caballo = re.match(r'^(\d+)\s+([A-Z][a-zA-Z\s\'\-]+)', linea)
-        if match_caballo:
-            nombre_caballo = match_caballo.group(2).strip()
-            pp_encontrado = 0.0
-            for j in range(i, min(i+15, len(lineas))):
-                if "Prime Power:" in lineas[j]:
-                    match_pp = re.search(r'Prime Power:\s*([\d\.]+)', lineas[j])
-                    if match_pp:
-                        pp_encontrado = float(match_pp.group(1)) / 100.0 
-                        break
-            
-            cuota_encontrada = 4.0 
-            match_cuota = re.search(r'(\d+/\d+)', linea)
-            if match_cuota:
-                frac = match_cuota.group(1)
-                num, den = frac.split('/')
-                cuota_encontrada = (float(num) / float(den)) + 1.0
-            
-            if nombre_caballo and pp_encontrado > 0:
-                if not any(c['Nombre'] == nombre_caballo and c['Carrera'] == carrera_actual for c in caballos_detectados):
-                    caballos_detectados.append({
-                        "Carrera": carrera_actual, "Nombre": nombre_caballo, "PP": pp_encontrado, "Cuota": cuota_encontrada
-                    })
-    return pd.DataFrame(caballos_detectados)
-
-# Cargar datos iniciales si hay PDFs guardados
+# 2. MEMORIA TEMPORAL SEGURA
 if 'pdf_data' not in st.session_state:
-    st.session_state.pdf_data = procesar_pdfs_en_disco()
-
+    st.session_state.pdf_data = pd.DataFrame()
 if 'hipodromo_actual' not in st.session_state:
     st.session_state.hipodromo_actual = "Gulfstream Park"
 
@@ -98,43 +46,75 @@ tab1, tab2, tab3, tab4 = st.tabs(["📄 1. Cargar Jornada", "🏆 2. Calcular Ca
 # PESTAÑA 1
 with tab1:
     st.markdown("### 1. Sube los PDFs de la Jornada")
-    archivos_guardados = os.listdir(CARPETA_PDFS)
-    if archivos_guardados:
-        st.success(f"📂 Memoria Persistente Activa: {len(archivos_guardados)} PDF(s) en disco.")
-    
     archivos_pdf = st.file_uploader("Selecciona los PDFs", type="pdf", accept_multiple_files=True)
     
     if archivos_pdf:
-        if st.button("🧠 PROCESAR Y GUARDAR EN DISCO", use_container_width=True):
-            with st.spinner("Guardando y procesando..."):
+        if st.button("🧠 PROCESAR Y GUARDAR EN MEMORIA", use_container_width=True):
+            with st.spinner("La ÍA HÍPICA está leyendo los PDFs..."):
+                texto_completo = ""
                 for archivo in archivos_pdf:
-                    ruta_guardado = os.path.join(CARPETA_PDFS, archivo.name)
-                    with open(ruta_guardado, "wb") as f:
-                        f.write(archivo.getbuffer())
+                    with pdfplumber.open(archivo) as pdf:
+                        for pagina in pdf.pages:
+                            texto_completo += pagina.extract_text() + "\n"
                 
-                st.session_state.pdf_data = procesar_pdfs_en_disco()
-                st.success(f"✅ PDFs guardados. Carreras listas: {st.session_state.pdf_data['Carrera'].nunique() if not st.session_state.pdf_data.empty else 0}")
-                st.rerun()
+                lineas = texto_completo.split('\n')
+                caballos_detectados = []
+                carrera_actual = "1"
+                
+                for i, linea in enumerate(lineas):
+                    match_race = re.search(r'Race\s*(\d+)', linea, re.IGNORECASE)
+                    if match_race:
+                        carrera_actual = match_race.group(1)
+                    
+                    match_caballo = re.match(r'^(\d+)\s+([A-Z][a-zA-Z\s\'\-]+)', linea)
+                    if match_caballo:
+                        nombre_caballo = match_caballo.group(2).strip()
+                        pp_encontrado = 0.0
+                        for j in range(i, min(i+15, len(lineas))):
+                            if "Prime Power:" in lineas[j]:
+                                match_pp = re.search(r'Prime Power:\s*([\d\.]+)', lineas[j])
+                                if match_pp:
+                                    pp_encontrado = float(match_pp.group(1)) / 100.0 
+                                    break
+                        
+                        cuota_encontrada = 4.0 
+                        match_cuota = re.search(r'(\d+/\d+)', linea)
+                        if match_cuota:
+                            frac = match_cuota.group(1)
+                            num, den = frac.split('/')
+                            cuota_encontrada = (float(num) / float(den)) + 1.0
+                        
+                        if nombre_caballo and pp_encontrado > 0:
+                            if not any(c['Nombre'] == nombre_caballo and c['Carrera'] == carrera_actual for c in caballos_detectados):
+                                caballos_detectados.append({
+                                    "Carrera": carrera_actual, "Nombre": nombre_caballo, "PP": pp_encontrado, "Cuota": cuota_encontrada
+                                })
+                
+                df_extraido = pd.DataFrame(caballos_detectados)
+                if df_extraido.empty:
+                    st.error("No se encontraron datos.")
+                else:
+                    st.session_state.pdf_data = df_extraido
+                    st.success(f"✅ ¡Memoria Cargada! Carreras listas: {df_extraido['Carrera'].nunique()}")
+                    st.rerun()
 
     st.markdown("---")
-    if st.button("🔴 CERRAR JORNADA (Borrar PDFs)", use_container_width=True):
-        if os.path.exists(CARPETA_PDFS):
-            shutil.rmtree(CARPETA_PDFS)
-            os.makedirs(CARPETA_PDFS)
+    st.markdown("### 🚨 Control de Jornada")
+    if st.button("🔴 CERRAR JORNADA (Borrar Memoria)", use_container_width=True):
         st.session_state.pdf_data = pd.DataFrame()
-        st.success("✅ Jornada cerrada. Memoria limpia.")
+        st.success("✅ Jornada cerrada. Memoria temporal borrada.")
         st.rerun()
 
 # PESTAÑA 2
 with tab2:
     if st.session_state.pdf_data.empty:
-        st.warning("⚠️ Primero carga los PDFs en la Pestaña 1.")
+        st.warning("⚠️ Primero debes cargar los PDFs en la Pestaña 1.")
     else:
-        st.markdown("### Selecciona la carrera")
+        st.markdown("### Selecciona la carrera a analizar")
         carreras = st.session_state.pdf_data['Carrera'].unique()
-        carrera_sel = st.selectbox("Carrera:", carreras)
+        carrera_sel = st.selectbox("Número de Carrera:", carreras)
         
-        if st.button("🚀 CALCULAR", use_container_width=True):
+        if st.button("🚀 CALCULAR CARRERA", use_container_width=True):
             df_carrera = st.session_state.pdf_data[st.session_state.pdf_data['Carrera'] == carrera_sel].copy()
             st.dataframe(df_carrera[["Nombre", "PP", "Cuota"]], use_container_width=True)
             
