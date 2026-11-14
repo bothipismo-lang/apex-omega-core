@@ -8,7 +8,6 @@ import io
 
 st.set_page_config(page_title="ÍA HÍPICA · APEX-OMEGA", page_icon="🏇", layout="wide")
 
-# --- ESTILOS CSS ---
 st.markdown("""
     <style>
     .stApp { background-color: #0E1117; color: #FAFAFA; }
@@ -20,10 +19,9 @@ st.markdown("""
 
 st.title("🏇 ÍA HÍPICA · APEX-OMEGA ×50 (Dixie Edition)")
 
-# --- CONSTANTES ---
 DB_NAME = "ia_hipica.db"
+ARCHIVO_CACHE = "cache_jornada.csv"
 
-# --- 1. GESTIÓN DE BASE DE DATOS SEGURA ---
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
@@ -43,11 +41,15 @@ def init_db():
 
 init_db()
 
-# --- INICIALIZAR SESSION STATE PARA PERSISTENCIA EN MEMORIA ---
-if 'pdf_procesado' not in st.session_state:
-    st.session_state.pdf_procesado = False
+# --- CARGAR DESDE EL DISCO DURO (PERSISTENTE AL REFRESCAR) ---
 if 'df_jornada' not in st.session_state:
-    st.session_state.df_jornada = pd.DataFrame()
+    if os.path.exists(ARCHIVO_CACHE):
+        st.session_state.df_jornada = pd.read_csv(ARCHIVO_CACHE)
+        # Asegurar que Carrera sea texto para evitar problemas de formato
+        st.session_state.df_jornada['Carrera'] = st.session_state.df_jornada['Carrera'].astype(str)
+    else:
+        st.session_state.df_jornada = pd.DataFrame()
+
 if 'hipodromo_actual' not in st.session_state:
     st.session_state.hipodromo_actual = "Horseshoe Indianapolis"
 
@@ -55,15 +57,14 @@ tab1, tab2, tab3, tab4 = st.tabs(["📄 1. Cargar Jornada", "🏆 2. Calcular Ca
 
 # --- PESTAÑA 1: CARGA Y PROCESAMIENTO ---
 with tab1:
-    st.markdown("### 1. Sube los PDFs de la Jornada una sola vez")
+    st.markdown("### 1. Sube los PDFs de la Jornada")
     archivos_pdf = st.file_uploader("Selecciona los PDFs de la cartelera", type="pdf", accept_multiple_files=True)
     
     col1, col2 = st.columns(2)
     with col1:
         if archivos_pdf:
-            # Botón para procesar solo si no se ha procesado o si el usuario quiere actualizar
-            if st.button("🧠 PROCESAR Y GUARDAR EN MEMORIA", use_container_width=True):
-                with st.spinner("Analizando PDFs y extrayendo métricas para toda la jornada..."):
+            if st.button("🧠 PROCESAR Y GUARDAR EN DISCO", use_container_width=True):
+                with st.spinner("Analizando PDFs y guardando en disco..."):
                     texto_completo = ""
                     for archivo in archivos_pdf:
                         with pdfplumber.open(io.BytesIO(archivo.getvalue())) as pdf:
@@ -102,7 +103,7 @@ with tab1:
                                     cuota_encontrada = (float(num) / float(den)) + 1.0
                             
                             if nombre_caballo and pp_encontrado > 0:
-                                if not any(c['Nombre'] == nombre_caballo and c['Carrera'] == carrera_actual for c in caballos_detectados):
+                                if not any(c['Nombre'] == nombre_caballo and c['Carrera'] == str(carrera_actual) for c in caballos_detectados):
                                     caballos_detectados.append({
                                         "Carrera": str(carrera_actual), "Nombre": nombre_caballo, "PP": pp_encontrado, "Cuota": cuota_encontrada
                                     })
@@ -111,34 +112,35 @@ with tab1:
                     if df_extraido.empty:
                         st.error("No se pudieron extraer datos válidos de los PDFs.")
                     else:
-                        # Guardamos directamente en la sesión para que NUNCA se borre al cambiar de pestaña
+                        # GUARDAR EN DISCO DURO (CSV) PARA QUE SOBREVIVA AL F5 / REFRESCO
+                        df_extraido.to_csv(ARCHIVO_CACHE, index=False)
                         st.session_state.df_jornada = df_extraido
-                        st.session_state.pdf_procesado = True
-                        st.success(f"✅ ¡Jornada cargada con éxito! Carreras listas: {', '.join(df_extraido['Carrera'].unique())}")
+                        st.success(f"✅ ¡Jornada guardada en disco! Carreras listas: {', '.join(df_extraido['Carrera'].unique())}")
+                        st.rerun()
 
     with col2:
         st.markdown("### 🚨 Control de Jornada")
-        if st.session_state.pdf_procesado:
-            st.success("🟢 Memoria Activa: Los datos están cargados y listos.")
+        if not st.session_state.df_jornada.empty:
+            st.success("🟢 Datos en disco detectados y activos.")
         else:
-            st.warning("⚠️ No hay datos cargados en memoria.")
+            st.warning("⚠️ No hay datos guardados.")
             
-        if st.button("🔴 CERRAR Y BORRAR DATOS TEMPORALES", use_container_width=True):
+        if st.button("🔴 CERRAR Y BORRAR DATOS DE DISCO", use_container_width=True):
+            if os.path.exists(ARCHIVO_CACHE):
+                os.remove(ARCHIVO_CACHE)
             st.session_state.df_jornada = pd.DataFrame()
-            st.session_state.pdf_procesado = False
-            st.success("✅ Memoria limpiada correctamente.")
+            st.success("✅ Archivos temporales borrados del disco.")
             st.rerun()
 
 # --- PESTAÑA 2: CÁLCULO ---
 with tab2:
     if st.session_state.df_jornada.empty:
-        st.warning("⚠️ Primero debes subir y procesar los PDFs en la Pestaña 1. Una vez cargados, podrás consultar cualquier carrera las veces que quieras.")
+        st.warning("⚠️ Primero sube y procesa los PDFs en la Pestaña 1.")
     else:
         st.markdown("### 🏆 Motor de Cálculo y Valor (*Edge*)")
         carreras = sorted(st.session_state.df_jornada['Carrera'].unique(), key=lambda x: int(x) if x.isdigit() else x)
         carrera_sel = st.selectbox("Seleccione el Número de Carrera:", carreras)
         
-        # Al seleccionar la carrera, mostramos los datos de inmediato sin perder memoria
         df_carrera = st.session_state.df_jornada[st.session_state.df_jornada['Carrera'] == carrera_sel].copy()
         
         st.markdown(f"#### 🏇 Inscritos - Carrera {carrera_sel}")
