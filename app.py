@@ -19,7 +19,7 @@ race_selected = st.sidebar.selectbox(
     [f"Carrera {i}" for i in range(1, 12)]
 )
 
-# Base de datos estructurada con las PPs de Gulfstream Park (ejemplo Carreras 1 y 2)[span_4](start_span)[span_4](end_span)[span_5](start_span)[span_5](end_span)[span_6](start_span)[span_6](end_span)
+# Base de datos estructurada con las PPs de Gulfstream Park
 def get_race_data(race_num):
     if "Carrera 1" in race_num:
         return pd.DataFrame({
@@ -85,8 +85,6 @@ with col2:
         st.image(image, caption="Capture en vivo cargado correctamente", use_container_width=True)
         
         with st.spinner("Analizando valoración en tiempo real..."):
-            # Simulación de actualización de probabilidades en vivo (Motor dinámico)
-            # Aquí puedes conectar en el futuro un modelo OCR (ej. pytesseract) para leer los datos reales de la imagen.
             np.random.seed(42)
             df_race['Prob_Live'] = df_race['Prob_AI'] * np.random.uniform(0.9, 1.1, len(df_race))
             df_race['Prob_Live'] = df_race['Prob_Live'] / df_race['Prob_Live'].sum() * 100
@@ -105,16 +103,3 @@ with col2:
         st.info("Esperando captura de la transmisión o aplicación de apuestas...")
 
 st.markdown("---")
-
----
-
-## 💡 Sugerencias, Opiniones e Ideas para Mejorar la App
-
-Para llevar esta herramienta al siguiente nivel y asegurar que cada vez esté más fina, te recomiendo incorporar lo siguiente:
-
-1. **Actualización Bayesiana de Probabilidades:** En lugar de hacer un ajuste aleatorio con el capture, podemos programar el sistema para que combine la probabilidad estática inicial (*Prime Power* de las PPs) con la tendencia del mercado en vivo (movimiento de los momios en el capture) usando el Teorema de Bayes.
-2. **Módulo OCR con `EasyOCR` o `Tesseract`:** Si tomas captures directos de la pantalla de la pista o de la aplicación, podemos integrar visión por computadora para que lea automáticamente los números de los caballos y sus dividendos en tiempo real sin que tengas que ingresarlos manualmente.
-3. **Alertas de Valor (*Overlay*):** Añadir una regla lógica que compare la probabilidad real calculada por tu inteligencia artificial con el dividendo actual en pantalla; si detecta una diferencia del 10% o más, la app te resalta el caballo en verde fosforescente indicando una apuesta de valor.
-4. **Historial de Rendimiento:** Guardar un registro automático de las apuestas sugeridas frente a los resultados reales de Gulfstream Park para calibrar los pesos de las variables (velocidad vs. clase).
-
-¿Qué te parece esta estructura inicial? Dime si quieres que profundicemos en alguna función específica o si le añadimos algún módulo adicional de inmediato.
