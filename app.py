@@ -2,23 +2,24 @@ import streamlit as st
 import pdfplumber
 import pandas as pd
 import sqlite3
+import re
 
-# 1. CONFIGURACIÓN DE PÁGINA Y ESTILO PREMIUM
-st.set_page_config(page_title="OMEGA-CORE ULTIMATE", page_icon="🏇", layout="wide")
+st.set_page_config(page_title="ÍA HÍPICA", page_icon="🏇", layout="wide")
 
 st.markdown("""
     <style>
     .stApp { background-color: #0E1117; color: #FAFAFA; }
-    .stButton>button { width: 100%; border-radius: 10px; height: 3em; background-color: #4CAF50; color: white; font-weight: bold; }
-    .stMetric { background-color: #1E2129; padding: 15px; border-radius: 10px; border: 1px solid #3E414B; }
+    .stButton>button { width: 100%; border-radius: 10px; height: 3em; background-color: #00E5FF; color: black; font-weight: bold; }
     h1, h2, h3 { color: #00E5FF; }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. BASE DE DATOS
+st.title("🏇 ÍA HÍPICA · APEX-OMEGA ×50")
+st.markdown("La Inteligencia Artificial que aprende de los caballos.")
+
+# BASE DE DATOS
 def init_db():
-    # Usamos la v2 para evitar el error de columnas
-    conn = sqlite3.connect('omega_core_v2.db')
+    conn = sqlite3.connect('ia_hipica.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS historial 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, hipodromo TEXT, carrera TEXT, caballo TEXT, cuota REAL, stake REAL, prob REAL, edge REAL, resultado TEXT)''')
@@ -31,149 +32,147 @@ def init_db():
 
 conn = init_db()
 
-# 3. INTERFAZ PRINCIPAL
-st.title("🏇 OMEGA-CORE ULTIMATE")
-st.markdown("### Terminal de Análisis Hípico Avanzado")
-st.markdown("---")
+tab1, tab2, tab3, tab4 = st.tabs(["🧠 Análisis Automático", "📄 Leer PDF", "🧠 Memoria", "💰 Banca"])
 
-tab1, tab2, tab3, tab4 = st.tabs(["🏆 Análisis de Carrera", "📄 Carga de PDFs", "🧠 Memoria & Resultados", "💰 Bankroll"])
-
-# PESTAÑA 1: ANÁLISIS COMPLETO DE CARRERA
+# PESTAÑA 1: ANÁLISIS AUTOMÁTICO DESDE PDF
 with tab1:
-    st.markdown("#### Configuración de la Carrera")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        hipodromo = st.text_input("Hipódromo:", value="Gulfstream Park")
-    with col2:
-        carrera_num = st.number_input("Carrera (R#):", min_value=1, value=1)
-    with col3:
-        stake = st.number_input("Stake (Bs):", min_value=10.0, value=100.0)
-
-    st.markdown("#### Datos de los Caballos (Ingresa los participantes)")
-    st.info("Llena los datos de todos los caballos. La app calculará la probabilidad de cada uno y elegirá al ganador.")
+    st.markdown("### 1. Sube el PDF de Brisnet (Equibase)")
+    archivo_pdf = st.file_uploader("Sube el archivo PDF", type="pdf")
     
-    # Creamos un formulario con 5 filas por defecto
-    with st.form("analisis_carrera"):
-        caballos_data = []
-        for i in range(1, 6): # 5 caballos
-            st.markdown(f"**Caballo {i}**")
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                nombre = st.text_input(f"Nombre #{i}", key=f"nom_{i}")
-            with c2:
-                pp = st.slider(f"Prime Power #{i}", 0.0, 1.0, 0.5, key=f"pp_{i}")
-            with c3:
-                jockey = st.slider(f"Jockey % #{i}", 0.0, 0.40, 0.10, key=f"jck_{i}")
-            with c4:
-                cuota = st.number_input(f"Cuota #{i}", min_value=1.01, value=4.00, key=f"cuo_{i}")
-            
-            if nombre: # Solo agregar si tiene nombre
-                caballos_data.append({"nombre": nombre, "pp": pp, "jockey": jockey, "cuota": cuota})
-            st.markdown("---")
+    if archivo_pdf:
+        st.markdown("### 2. Selecciona la carrera")
+        carrera_a_buscar = st.text_input("Escribe el número de carrera (Ej: 1):", value="1")
+        hipodromo = st.text_input("Nombre del Hipódromo:", value="Gulfstream Park")
+        
+        if st.button("🚀 EXTRAER DATOS Y CALCULAR", use_container_width=True):
+            with st.spinner("La ÍA HÍPICA está leyendo el PDF..."):
+                with pdfplumber.open(archivo_pdf) as pdf:
+                    texto_completo = ""
+                    for pagina in pdf.pages:
+                        texto_completo += pagina.extract_text() + "\n"
+                    
+                    # LÓGICA DE EXTRACCIÓN DE BRISNET
+                    # Brisnet tiene un formato de texto donde los caballos salen con su nombre
+                    # y en la misma línea o cerca aparece "Prime Power: X.X"
+                    
+                    # Vamos a buscar todas las apariciones de "Prime Power:"
+                    lineas = texto_completo.split('\n')
+                    
+                    caballos_detectados = []
+                    # Buscamos patrones como: "1 Sista Sol (P 2)" o "7 Miss Silipo (S 4)"
+                    # y luego buscamos su Prime Power en las líneas siguientes.
+                    
+                    # Heurística simple: buscar lineas que empiecen con número y tengan texto, 
+                    # luego buscar la palabra Prime Power en las cercanías.
+                    for i, linea in enumerate(lineas):
+                        # Busca lineas que empiecen con número de caballo (Ej: 1, 2, 3...)
+                        match_caballo = re.match(r'^(\d+)\s+([A-Z][a-zA-Z\s\'\-]+)', linea)
+                        if match_caballo:
+                            num_caballo = match_caballo.group(1)
+                            nombre_caballo = match_caballo.group(2).strip()
+                            
+                            # Buscamos el Prime Power en las siguientes 5 líneas
+                            pp_encontrado = 0.0
+                            for j in range(i, min(i+15, len(lineas))):
+                                if "Prime Power:" in lineas[j]:
+                                    match_pp = re.search(r'Prime Power:\s*([\d\.]+)', lineas[j])
+                                    if match_pp:
+                                        pp_encontrado = float(match_pp.group(1)) / 100.0 # Normalizado a 0-1
+                                        break
+                            
+                            # Buscamos la cuota (ML) en la línea. En Brisnet suele ser algo como "4/1" o "7/2"
+                            cuota_encontrada = 4.0 # Por defecto
+                            match_cuota = re.search(r'(\d+/\d+)', linea)
+                            if match_cuota:
+                                frac = match_cuota.group(1)
+                                num, den = frac.split('/')
+                                cuota_encontrada = (float(num) / float(den)) + 1.0
+                            
+                            # Si encontramos nombre y PP, lo agregamos
+                            if nombre_caballo and pp_encontrado > 0:
+                                # Evitar duplicados por nombre
+                                if not any(c['Nombre'] == nombre_caballo for c in caballos_detectados):
+                                    caballos_detectados.append({
+                                        "Nombre": nombre_caballo, 
+                                        "PP": pp_encontrado,
+                                        "Cuota": cuota_encontrada
+                                    })
+                    
+                    df_extraido = pd.DataFrame(caballos_detectados)
+                    
+                    if df_extraido.empty:
+                        st.error("No se pudieron extraer los datos. Asegúrate de que el PDF sea de Brisnet y tenga el formato correcto.")
+                    else:
+                        st.success(f"✅ Se extrajeron {len(df_extraido)} caballos del PDF.")
+                        st.dataframe(df_extraido, use_container_width=True)
+                        
+                        # CALCULAR PROBABILIDAD (Fórmula Maestra)
+                        total_q = sum(1 / c['Cuota'] for _, c in df_extraido.iterrows())
+                        resultados = []
+                        for _, c in df_extraido.iterrows():
+                            p_mercado = (1 / c['Cuota']) / total_q
+                            p_fund = c['PP'] # Usamos solo el PP para el fundamental (simplificado)
+                            p_final = (0.50 * p_mercado) + (0.50 * p_fund)
+                            edge = (p_final * c['Cuota']) - 1
+                            
+                            resultados.append({
+                                "Caballo": c['Nombre'], 
+                                "PP": c['PP'],
+                                "Cuota": c['Cuota'], 
+                                "Probabilidad": f"{p_final*100:.1f}%", 
+                                "Edge": f"{edge:+.2f}", 
+                                "p_final": p_final
+                            })
+                        
+                        resultados.sort(key=lambda x: x['p_final'], reverse=True)
+                        df_res = pd.DataFrame(resultados)
+                        
+                        st.markdown("### 🏆 VEREDICTO (Regla Suprema)")
+                        st.dataframe(df_res[["Caballo", "PP", "Cuota", "Probabilidad", "Edge"]], use_container_width=True)
+                        
+                        ganador = resultados[0]
+                        st.success(f"🎯 **GANADOR MATEMÁTICO: {ganador['Caballo']}** (Prob: {ganador['Probabilidad']})")
+                        
+                        # Registramos la apuesta automáticamente
+                        c = conn.cursor()
+                        c.execute("INSERT INTO historial (hipodromo, carrera, caballo, cuota, stake, prob, edge, resultado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
+                                  (hipodromo, f"R{carrera_a_buscar}", ganador['Caballo'], ganador['Cuota'], 50.0, ganador['p_final'], ganador['p_final']*ganador['Cuota']-1, "Pendiente"))
+                        c.execute("UPDATE banca SET balance = balance - ? WHERE id = 1", (50.0,))
+                        conn.commit()
+                        st.warning(f"⚠️ Apuesta registrada automáticamente (50 Bs).")
 
-        boton_analizar = st.form_submit_button("🚀 EJECUTAR ANÁLISIS MASIVO")
-
-    if boton_analizar and len(caballos_data) > 0:
-        # Lógica de mercado
-        total_q = sum(1 / c['cuota'] for c in caballos_data)
-        
-        resultados = []
-        for c in caballos_data:
-            p_mercado = (1 / c['cuota']) / total_q
-            # Damos peso a la forma (simulada como 0.5 por ahora para simplificar)
-            p_fund = (c['pp'] * 0.7) + (c['jockey'] * 0.3) 
-            p_final = (0.50 * p_mercado) + (0.50 * p_fund)
-            edge = (p_final * c['cuota']) - 1
-            
-            resultados.append({
-                "Caballo": c['nombre'], "Cuota": c['cuota'], 
-                "Probabilidad": f"{p_final*100:.1f}%", "Edge": f"{edge:+.2f}", "p_final": p_final, "edge_val": edge
-            })
-        
-        # Ordenar por probabilidad (Regla Suprema)
-        resultados.sort(key=lambda x: x['p_final'], reverse=True)
-        df_res = pd.DataFrame(resultados)
-        
-        st.markdown("### 🏆 Veredicto del Sistema (Regla Suprema)")
-        st.dataframe(df_res[["Caballo", "Cuota", "Probabilidad", "Edge"]], use_container_width=True)
-        
-        ganador = resultados[0]
-        st.success(f"🎯 **EL ALGORITMO RECOMIENDA APOSTAR A: {ganador['Caballo']}** (Probabilidad: {ganador['Probabilidad']})")
-        
-        if ganador['edge_val'] >= 0.05:
-            st.info(f"✅ **VALOR DETECTADO.** Se recomienda apostar {stake} Bs a WIN.")
-            # Registrar en base de datos y descontar banca
-            c = conn.cursor()
-            c.execute("INSERT INTO historial (hipodromo, carrera, caballo, cuota, stake, prob, edge, resultado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
-                      (hipodromo, f"R{carrera_num}", ganador['Caballo'], ganador['Cuota'], stake, ganador['p_final'], ganador['edge_val'], "Pendiente"))
-            c.execute("UPDATE banca SET balance = balance - ? WHERE id = 1", (stake,))
-            conn.commit()
-            st.warning(f"⚠️ Apuesta registrada. Se han descontado {stake} Bs de la banca.")
-        else:
-            st.warning("⚠️ **NO HAY VALOR SUFICIENTE.** El favorito no paga lo que vale. La Regla Suprema dice no apostar.")
-
-# PESTAÑA 2: CARGA MASIVA DE PDFs
+# PESTAÑA 2: LECTURA DE PDF (Diagnóstico)
 with tab2:
-    st.markdown("### 📄 Carga Múltiple de PDFs (Racecards)")
-    st.write("Sube hasta 15 archivos PDF de Equibase, MeridianBet o cualquier otro formato.")
-    
-    # Acepta múltiples archivos
-    archivos_pdf = st.file_uploader("Selecciona los archivos PDF", type="pdf", accept_multiple_files=True)
-    
-    if archivos_pdf:
-        st.success(f"✅ {len(archivos_pdf)} archivos cargados.")
-        for i, archivo in enumerate(archivos_pdf):
-            with st.expander(f"📄 Archivo {i+1}: {archivo.name}"):
-                with pdfplumber.open(archivo) as pdf:
-                    texto = pdf.pages[0].extract_text()
-                    st.text_area("Texto extraído (Pág 1):", texto, height=150, key=f"pdf_{i}")
+    st.markdown("### 📄 Texto Crudo del PDF")
+    if archivo_pdf:
+        with pdfplumber.open(archivo_pdf) as pdf:
+            st.text_area("Texto leído (Pág 1):", pdf.pages[0].extract_text(), height=400)
 
-# PESTAÑA 3: MEMORIA Y RESULTADOS
+# PESTAÑA 3: MEMORIA
 with tab3:
-    st.markdown("### 🧠 Historial de Apuestas")
     df = pd.read_sql_query("SELECT * FROM historial", conn)
-    
-    if df.empty:
-        st.info("No hay apuestas registradas aún.")
-    else:
-        st.dataframe(df, use_container_width=True)
-        
-        st.markdown("#### Resolver Apuestas Pendientes")
-        pendientes = df[df['resultado'] == 'Pendiente']
-        if not pendientes.empty:
-            for index, row in pendientes.iterrows():
-                col1, col2, col3 = st.columns([4, 1, 1])
-                with col1:
-                    st.write(f"**{row['caballo']}** ({row['hipodromo']} {row['carrera']}) | Cuota: {row['cuota']} | Stake: {row['stake']} Bs")
-                with col2:
-                    if st.button("✅ Ganó", key=f"w_{row['id']}"):
-                        ganancia = row['stake'] * row['cuota']
-                        c = conn.cursor()
-                        c.execute("UPDATE historial SET resultado = 'Ganó' WHERE id = ?", (row['id'],))
-                        c.execute("UPDATE banca SET balance = balance + ? WHERE id = 1", (ganancia,))
-                        conn.commit()
-                        st.rerun()
-                with col3:
-                    if st.button("❌ Perdió", key=f"l_{row['id']}"):
-                        c = conn.cursor()
-                        c.execute("UPDATE historial SET resultado = 'Perdió' WHERE id = ?", (row['id'],))
-                        conn.commit()
-                        st.rerun()
+    st.dataframe(df, use_container_width=True)
+    pendientes = df[df['resultado'] == 'Pendiente']
+    if not pendientes.empty:
+        for index, row in pendientes.iterrows():
+            col1, col2, col3 = st.columns([3, 1, 1])
+            col1.write(f"**{row['caballo']}** - {row['hipodromo']} {row['carrera']}")
+            if col2.button("✅ Ganó", key=f"w_{row['id']}"):
+                ganancia = row['stake'] * row['cuota']
+                c = conn.cursor()
+                c.execute("UPDATE historial SET resultado = 'Ganó' WHERE id = ?", (row['id'],))
+                c.execute("UPDATE banca SET balance = balance + ? WHERE id = 1", (ganancia,))
+                conn.commit()
+                st.rerun()
+            if col3.button("❌ Perdió", key=f"l_{row['id']}"):
+                c = conn.cursor()
+                c.execute("UPDATE historial SET resultado = 'Perdió' WHERE id = ?", (row['id'],))
+                conn.commit()
+                st.rerun()
 
-# PESTAÑA 4: BANKROLL
+# PESTAÑA 4: BANCA
 with tab4:
-    st.markdown("### 💰 Gestión de Banca")
     c = conn.cursor()
     c.execute("SELECT balance FROM banca WHERE id = 1")
-    balance_actual = c.fetchone()[0]
-    
-    st.metric(label="Balance Actual", value=f"{balance_actual:.2f} Bs")
-    
-    st.markdown("---")
-    st.write("Ajuste Manual (Depósitos o Retiros):")
-    nuevo_saldo = st.number_input("Establecer saldo:", min_value=0.0, value=float(balance_actual))
-    if st.button("Actualizar Banca"):
-        c.execute("UPDATE banca SET balance = ? WHERE id = 1", (nuevo_saldo,))
-        conn.commit()
-        st.success("Banca actualizada manualmente.")
-        st.rerun()
+    balance = c.fetchone()[0]
+    st.metric("Banca Actual", f"{balance:.2f} Bs")
