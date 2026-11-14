@@ -1,99 +1,76 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from PIL import Image
 from datetime import datetime
 
-# Configuración optimizada para vista móvil (centered evita que se aplaste o desborde en teléfonos)
-st.set_page_config(
-    page_title="Apex Omega Mobile",
-    page_icon="🏇",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="Apex Omega", page_icon="🏇", layout="centered")
 
-# ==========================================
-# ESTILOS CSS MOBILE-FIRST (COMPACTO & PRO)
-# ==========================================
+# Estilo móvil limpio
 st.markdown("""
 <style>
-    /* Reducir márgenes superiores e inferiores de Streamlit en móvil */
-    .block-container {
-        padding-top: 1.2rem !important;
-        padding-bottom: 2rem !important;
-        padding-left: 0.8rem !important;
-        padding-right: 0.8rem !important;
-    }
-    /* Tarjeta de caballo compacta para celular */
-    .mobile-card {
-        background: linear-gradient(145deg, #1b1e26, #232732);
-        border-radius: 10px;
-        padding: 8px 10px;
-        margin-bottom: 7px;
-        border: 1px solid #2e3440;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-    }
-    .saddle-mini {
-        font-weight: 800;
-        font-size: 14px;
-        padding: 4px 6px;
-        border-radius: 6px;
-        text-align: center;
-        min-width: 42px;
-        margin-right: 10px;
-        line-height: 1.1;
-    }
-    .horse-title {
-        font-size: 14px;
-        font-weight: 700;
-        color: #f8f9fa;
-        margin: 0;
-        line-height: 1.2;
-    }
-    .horse-sub {
-        font-size: 11px;
-        color: #adb5bd;
-        margin: 2px 0 0 0;
-        line-height: 1.1;
-    }
-    .prob-pill {
-        background-color: #2b9348;
-        color: #ffffff;
-        padding: 3px 8px;
-        border-radius: 12px;
-        font-weight: 700;
-        font-size: 12px;
-        display: inline-block;
-    }
-    .ev-tag-pos {
-        color: #80ed99;
-        font-weight: 700;
-        font-size: 10.5px;
-        margin-top: 3px;
-    }
-    .ev-tag-neg {
-        color: #6c757d;
-        font-size: 10.5px;
-        margin-top: 3px;
-    }
-    .bankroll-banner {
-        background-color: #14171d;
-        border: 1px solid #2b9348;
-        border-radius: 10px;
-        padding: 10px 14px;
-        margin-bottom: 12px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
+    .block-container { padding-top: 1rem; padding-bottom: 2rem; padding-left: 0.5rem; padding-right: 0.5rem; }
+    .card { background: #1e212d; border-radius: 8px; padding: 10px; margin-bottom: 8px; border-left: 5px solid #e63946; }
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# INICIALIZACIÓN ROBUSTA DE ESTADO
-# ==========================================
-if 'bankroll' not in st.session_state:
-    st.session_state['bankroll'] = 100.0
+# Estado global
+if 'bankroll' not in st.session_state: st.session_state['bankroll'] = 100.0
+if 'tickets' not in st.session_state: st.session_state['tickets'] = []
+
+st.markdown("### 🏇 Apex Omega • Gulfstream C1")
+st.info(f"💰 **Bankroll:** ${st.session_state['bankroll']:.2f} | ⏱️ **Partida:** 1:20 PM")
+
+# Datos oficiales Carrera 1
+data = [
+    {"Num": 1, "Caballo": "Sista Sol", "Jinete": "Ocasio J.", "Div": 26.0, "PP": 96.8, "Spd": 55},
+    {"Num": 2, "Caballo": "Via Via Via", "Jinete": "Vasquez F.", "Div": 18.0, "PP": 88.6, "Spd": 56},
+    {"Num": 3, "Caballo": "Chrissy's Dream", "Jinete": "Rios J.", "Div": 6.0, "PP": 95.7, "Spd": 26},
+    {"Num": 4, "Caballo": "I'm Chill", "Jinete": "Herrera D.", "Div": 6.0, "PP": 110.9, "Spd": 69},
+    {"Num": 5, "Caballo": "Our Perfect Amanda", "Jinete": "Lopez Paco", "Div": 2.8, "PP": 112.7, "Spd": 68},
+    {"Num": 6, "Caballo": "Decisive Maiara", "Jinete": "Vasquez M.", "Div": 6.0, "PP": 99.6, "Spd": 49},
+    {"Num": 7, "Caballo": "Miss Silipo", "Jinete": "Husbands M.", "Div": 3.0, "PP": 104.0, "Spd": 62},
+    {"Num": 8, "Caballo": "Shamrock Queen", "Jinete": "Morelos J.", "Div": 50.0, "PP": 84.5, "Spd": 24},
+    {"Num": 9, "Caballo": "Loyalist", "Jinete": "Ismerio V.", "Div": 41.0, "PP": 107.2, "Spd": 63},
+]
+df = pd.DataFrame(data)
+
+# Cálculo de probabilidades y EV
+df['Score'] = (df['PP'] * 0.7) + (df['Spd'] * 0.3)
+exp_s = np.exp((df['Score'] - df['Score'].mean()) / 8.0)
+df['Prob'] = (exp_s / exp_s.sum()) * 100
+df['EV'] = ((df['Prob'] / 100.0) * df['Div'] - 1.0) * 100
+
+# Pestañas
+t1, t2 = st.tabs(["📋 Guía C1", "🎟️ Bankroll"])
+
+with t1:
+    st.markdown("**Lista Oficial & Probabilidades:**")
+    df_ord = df.sort_values(by="Prob", ascending=False)
+    for _, r in df_ord.iterrows():
+        st.markdown(f"""
+        <div class="card">
+            <div style="display:flex; justify-content:space-between;">
+                <b>#{r['Num']} {r['Caballo']}</b>
+                <span style="color: #2b9348; font-weight:bold;">{r['Prob']:.1f}%</span>
+            </div>
+            <div style="font-size:12px; color:#aaa;">J: {r['Jinete']} | Div: {r['Div']} | EV: {r['EV']:+.0f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+with t2:
+    st.markdown("**Registrar Apuesta**")
+    monto = st.number_input("Monto apostado ($):", min_value=0.0, max_value=float(st.session_state['bankroll']), value=0.0)
+    caballo_sel = st.selectbox("Caballo:", [f"#{r['Num']} {r['Caballo']}" for _, r in df.iterrows()])
+    
+    if st.button("Confirmar y Descontar"):
+        if monto > 0:
+            st.session_state['bankroll'] -= monto
+            st.session_state['tickets'].append({"Caballo": caballo_sel, "Monto": monto})
+            st.success("¡Descontado con éxito!")
+            st.rerun()
+        else:
+            st.warning("Ingresa un monto válido.")
+            
+    if st.session_state['tickets']:
+        st.write("Apuestas realizadas:")
+        st.dataframe(pd.DataFrame(st.session_state['tickets']), use_container_width=True)
